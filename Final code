@@ -1,0 +1,209 @@
+import java.util.*;
+import java.io.*;
+
+// Represents a Word and its associated vector in the K-D tree
+class Word {
+    String word;   // The word/identifier
+    float[] vector;  // Vector of the word (Array of floats)
+
+    // Initialize a Word object with a word and vector
+    public Word(String word, float[] vector) {
+        this.word = word;
+        this.vector = vector;
+    }
+}
+
+// KTDNode class representing nodes in the K-D tree
+class KTDNode {
+    Word word;  // Node stores a Word object
+    KTDNode left, right;  // Left/Right child pointers
+
+    // Constructor: Initializes a KTDNode with a Word
+    public KTDNode(Word word) {
+        this.word = word;
+        this.left = null;
+        this.right = null;
+    }
+}
+
+// KDT class represents the K-D tree structure
+class KDT {
+    KTDNode root;  // Root of the tree
+    int d;  // d is the number of dimensions of the vectors
+
+    // Constructor: Initializes an empty K-D tree with a specific d
+    public KDT(int d) {
+        this.d = d;  // Assign the d value here
+        this.root = null;  // Initially, the tree has no root
+    }
+
+    // Builds a balanced K-D tree from a list of Word objects
+    public KTDNode build(List<Word> words, int depth) {
+        if (words.isEmpty()) return null;  // Base case: if list empty, return null
+
+        int axis = depth % d;  // Select axis based on depth 
+
+        // Sort words by value of the current axis 
+        words.sort((w1, w2) -> Float.compare(w1.vector[axis], w2.vector[axis]));
+
+        int medIndex = words.size() / 2;  // Find the median index
+        Word medWord = words.get(medIndex);  // Select the median word
+
+        // Create the node and recursively build subtrees
+        KTDNode node = new KTDNode(medWord);
+        node.left = build(words.subList(0, medIndex), depth + 1);  // Left subtree
+        node.right = build(words.subList(medIndex + 1, words.size()), depth + 1);  // Right subtree
+
+        return node;
+    }
+
+    // Finds the nearest neighbor for query vector
+    public Word findNearestNeighbor(float[] queryVector) {
+        return findNearestNeighbor(root, queryVector, 0, null, Float.MAX_VALUE);
+    }
+
+    // Recursive nearest neighbor search function
+    private Word findNearestNeighbor(KTDNode node, float[] queryVector, int depth, Word bestWord, float bestDist) {
+        if (node == null) return bestWord;  // Base case: if node is null, return the best word found so far
+
+        // Calculate squared Euclidean distance between query and current node
+        float dist = squaredEuclideanDistance(queryVector, node.word.vector);
+        
+        // If the current node is closer, update the best word and distance
+        if (dist < bestDist) {
+            bestWord = node.word;
+            bestDist = dist;
+        }
+
+        int axis = depth % d;  // Get axis based on depth
+        KTDNode nextNode;  
+        KTDNode otherNode;  
+        
+        // Select subtree to search 
+        if (queryVector[axis] < node.word.vector[axis]) {
+            nextNode = node.left;  // If query value is smaller, look left subtree
+            otherNode = node.right;  // Pointer to keep track for future iterations
+        } else {
+            nextNode = node.right;  // Otherwise, look right subtree
+            otherNode = node.left;  // Pointer to keep track
+        }
+
+        // Recursion to search next node
+        bestWord = findNearestNeighbor(nextNode, queryVector, depth + 1, bestWord, bestDist);
+
+        // If necessary, search other node ( check if might be a closer point on other side)
+        if (Math.abs(queryVector[axis] - node.word.vector[axis]) < bestDist) {
+            bestWord = findNearestNeighbor(otherNode, queryVector, depth + 1, bestWord, bestDist);
+        }
+
+        return bestWord;
+    }
+
+    // Computes squared Euclidean distance between vectors
+    public float squaredEuclideanDistance(float[] v1, float[] v2) {
+        float sum = 0;
+        for (int i = 0; i < v1.length; i++) {
+            float diff = v1[i] - v2[i];
+            sum += diff * diff;  // Squared difference
+        }
+        return sum;
+    }
+
+    // Calculates height of the K-D tree 
+    public int calculateHeight(KTDNode node) {
+        if (node == null) {
+            return -1;  // If the node is null, its height is considered -1
+        }
+
+        int leftHeight = calculateHeight(node.left);   // Height of left subtree
+        int rightHeight = calculateHeight(node.right); // Height of right subtree
+
+        // current node height is the max of left/right subtree heights + 1
+        return Math.max(leftHeight, rightHeight) + 1;
+    }
+
+    // Reads data from a file and returns a list of Word objects
+    public static List<Word> readData(String filePath, KDT kdTree) throws IOException {
+        BufferedReader reader = new BufferedReader(new FileReader(filePath));
+        List<Word> words = new ArrayList<>();
+
+        String line = reader.readLine();
+        if (line == null || line.trim().isEmpty()) {
+            reader.close();
+            throw new IOException("Empty or invalid input file.");
+        }
+
+        String[] firstLine = line.split(" ");
+        while ((line = reader.readLine()) != null) {
+            if (line.trim().isEmpty()) continue;  // Skip empty lines
+
+            String[] parts = line.split(" ");
+            String word = parts[0];  // First part is word
+            float[] vector = new float[kdTree.d];  // Initialize vector 
+
+            for (int i = 1; i <= kdTree.d; i++) {
+                try {
+                    vector[i - 1] = Float.parseFloat(parts[i]);  // Parse vector components
+                } catch (NumberFormatException e) {
+                    System.err.println("Error parsing vector component: " + parts[i]);
+                    throw new IOException("Invalid vector component format.");
+                }
+            }
+
+            words.add(new Word(word, vector));  // Create Word object and add to the list
+        }
+
+        reader.close();
+        return words;
+    }
+
+    // Calculate minimal height of the K-D tree 
+    public static int minimalHeight(int n) {
+        return (int) Math.ceil(Math.log(n) / Math.log(2));  // Minimal height is log2(n)
+    }
+}
+
+
+public class Kdnn {
+    public static void main(String[] args) {
+        if (args.length != 1) {
+            System.err.println("Usage: java KDTreeExample <data file path>");
+            return;
+        }
+
+        try {
+            int dimensions = 30;  // Set dimensions of vectors 
+            KDT kdTree = new KDT(dimensions);  // Create K-D tree object
+            List<Word> words = KDT.readData(args[0], kdTree);  // Read data into Word objects
+
+            // Build balanced K-D tree
+            kdTree.root = kdTree.build(words, 0);
+
+            // Calculate the height 
+            int treeHeight = kdTree.calculateHeight(kdTree.root);
+            System.out.println("Height of the constructed K-D tree: " + treeHeight);
+
+            // Calculate the minimal height 
+            int minimalHeight = KDT.minimalHeight(words.size());
+            System.out.println("Minimal height of a perfectly balanced K-D tree: " + minimalHeight);
+
+            // Compare actual height with minimal height
+            if (treeHeight <= minimalHeight) {
+                System.out.println("The K-D tree is balanced.");
+            } else {
+                System.out.println("The K-D tree is not perfectly balanced.");
+            }
+
+            // perform nearest neighbor queries
+            for (int i = 0; i < 10; i++) {
+                float[] queryVector = words.get(i).vector;
+                Word nearest = kdTree.findNearestNeighbor(queryVector);  // Find nearest neighbor
+                float dist = kdTree.squaredEuclideanDistance(queryVector, nearest.vector);  // Calculate distance
+                System.out.printf("testword_%d nearest %s dist = %.6f\n", i, nearest.word, dist);
+            }
+
+        } catch (IOException e) {
+            System.err.println("Error reading file: " + e.getMessage());
+        }
+    }
+}
